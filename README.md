@@ -88,3 +88,51 @@ Two key categorical varibles, Gender and Card Category, were statistically signi
 | Education_Level | 12.51 | Not-Significant |
 | Marital_Status | 6.06 | Not-Significant |
 | Card_Category | 2.23 | Not-Significant |
+
+### Logistic Regression Model:
+
+#### Approach
+
+- Algorithm: Logistic Regression
+  - glm with binomial family
+- Split: 75% training, 25% test
+  - Stratified
+  - Set Seed: 365
+- Features: 17 Predictors
+  - Demographics
+  - Account Tenure
+  - Behavioral Signals
+ 
+#### Model Performance
+
+| Metric | Value |
+|-----------|-------------|
+| AUC | ~0.916 |
+| Accuracy | ~90% |
+|Recall (Sensitivity) | ~58.6% |
+| Precision | ~73.9% |
+
+The AUC value of 0.916 indicates a strong discriminative ability for the model. This means the model correctly ranks a randomly selected churner over a randomly selected retained customer 91.6% of the time.
+
+#### Top Significant Predictors (by |z-statistic|)
+
+1. Total_Trans_Ct -- Most Powerful Predictor
+2. Total_Trans_Amt -- Lower Spend Trend
+3. Total_Relationship_Count -- Less Products Churn More
+4. Total_Ct_Chng_Q4_Q1 -- Declining Transaction Trend
+5. Contacts_Count_12_mon -- High Contact Volume Indicates Frustration
+
+## Business Recommendations
+
+Based on the analysis, the bank can reduce churn by targeting customers who exhibit early warning signs by the following ways:
+
+1. Transaction-Based Warning System:
+Flag customers whose transaction count drops below fifty in a rolling twelve month window. Customers who meet this criteria are at a significant risk of churn and warrant outreach.
+2. Inactivity Triggers:
+
+
+
+
+
+
+

@@ -129,10 +129,34 @@ Based on the analysis, the bank can reduce churn by targeting customers who exhi
 1. Transaction-Based Warning System:
 Flag customers whose transaction count drops below fifty in a rolling twelve month window. Customers who meet this criteria are at a significant risk of churn and warrant outreach.
 2. Inactivity Triggers:
-test
+Automatically  send personalized offers or check-in communications after two consecutive months of inactivity before the customer fully disengages.
+3. Contact Center Review:
+Customers with four or more bank contacts in a twelve month span churn at high rates. This would suggest unresolved issues. Routing these customers to a senior retention specialist could recover a significant amount of churn-prone customers.
+4. Incentives for Utilization:
+Customers with low utilization are disengaged. Credit limit promotions, cashback promotions, balance transfer offers for customers with met qualifiactions can increase engagement and card usage.
 
+## Skills Demonstrated
 
+- Data Cleaning and Wrangling
+  - dplyr
+  - tidyr
+- Exploratory Data Analysis and Visualization
+  - ggplot2
+- Statistical Hypothesis Testing
+  - Correlation
+  - Chi-Squared
+- Predictive Modeling with Logistic Regression
+- Model Evaluation
+  - Confusion Matrix
+  - ROC Curve
+  - AUC
+- Translating Statistical Findings into Business Recommendations
 
+## Dataset
+
+Dataset provided by IBM / Kaggle under open license. Analysis conducted independently for portfolio purposes.
+Dataset can be found at the following link:
+https://www.kaggle.com/datasets/sakshigoyal7/credit-card-customers
 
 
 

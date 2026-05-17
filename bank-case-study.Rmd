@@ -1,0 +1,437 @@
+---
+title: "bank-case-study.rmd"
+author: "Cam Kerk"
+date: "2026-05-17"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Tools: R · tidyverse · ggplot2 · glm · caret
+
+Dataset: IBM Credit Card Customer Churn -- 21 variables, 10,127 customers
+
+Goal: Identify customers who are likely to leave the bank and actionable retention strategies
+
+## Business Problem
+One of banking's greatest and costly challenges is customer churn. Acquiring new customers costs significantly more than retaining existing customers. This case study uses a real-world dataset to answer:
+
+Which customers are at risk of churning, and what behavioral signals can the bank act on before it happens?
+
+
+## Loading Libraries and Data
+
+```{r cars, message = FALSE, warning = FALSE}
+data = read.csv("~/Desktop/BankChurners.csv")
+
+library(tidyverse)
+library(caret)
+library(pROC)
+library(scales)
+library(gridExtra)
+```
+
+
+## Inspecting and Organizing Data
+
+```{r pressure}
+data = as_tibble(data)
+
+df = data %>%
+  select(-Naive_Bayes_Classifier_Attrition_Flag_Card_Category_Contacts_Count_12_mon_Dependent_count_Education_Level_Months_Inactive_12_mon_1) %>%
+  select(-Naive_Bayes_Classifier_Attrition_Flag_Card_Category_Contacts_Count_12_mon_Dependent_count_Education_Level_Months_Inactive_12_mon_2)
+
+df = df %>%
+  rename(churn_flag = Attrition_Flag) %>%
+  mutate(churned = if_else(churn_flag == "Attrited Customer", 1L, 0L),
+         churned_label = factor(churned, levels = c(0,1),
+                                                    labels = c("Retained", "Churned")))
+
+```
+
+
+## Dataset Dimensions
+
+Rows in dataset after cleaning and wrangling.
+
+```{r}
+print(nrow(df))
+```
+
+
+Columns in dataset after cleaning and wrangling.
+
+```{r}
+print(ncol(df))
+```
+
+
+## Data Analysis
+
+### Churn Rate Overview
+
+Churn rate summary table.
+
+```{r}
+churn_summary_table = df %>%
+  count(churned_label) %>%
+  mutate(pct = n/sum(n), label = percent(pct, 2))
+
+churn_summary_table
+
+```
+
+
+Churn rate summary table visualized in a bar plot. It has been found that about 16% of customers have left the bank.
+
+```{r}
+churn_rate_plot = ggplot(churn_summary_table, 
+       aes(x = churned_label, y = n, fill = churned_label)) +
+  geom_col(width = 0.5, show.legend = FALSE) +
+  geom_text(aes(label = label), vjust = -0.4, size = 4.5, fontface = "bold") +
+  scale_fill_manual(values = c("Retained" = "#2196F3", "Churned" = "#F44336")) +
+  scale_y_continuous(labels = comma, expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Overall Churn Rate",
+       subtitle = "~16% of customers have left the bank",
+       x = NULL, y = "Number of Customers") +
+  theme_minimal(base_size = 15)
+
+churn_rate_plot
+```
+
+
+### Transaction Count vs. Churn
+
+Transaction count versus churn visualized in a box plot. It is found that churned customers make far fewer transactions via the box plot.
+
+```{r}
+transaction_box_plot = ggplot(df, aes(x = churned_label, y = Total_Trans_Ct, fill = churned_label)) +
+  geom_boxplot(show.legend = FALSE, outlier.alpha = 0.3) +
+  scale_fill_manual(values = c("Retained" = "#2196F3", "Churned" = "#F44336")) +
+  labs(title = "Transaction Count by Churn Status",
+       subtitle = "Churned customers make far fewer transactions",
+       x = NULL, y = "Total Transactions (last 12 months)") +
+  theme_minimal(base_size = 15)
+
+transaction_box_plot
+```
+
+
+### Credit Utilization vs. Churn
+
+Credit utilization ratio by churn status plot. It is found that churned customers have lower utilization thus indicating they are disengaged.
+
+```{r}
+credit_util_plot = ggplot(df, aes(x = Avg_Utilization_Ratio, fill = churned_label)) +
+  geom_density(alpha = 0.6) +
+  scale_fill_manual(values = c("Retained" = "#2196F3", "Churned" = "#F44336")) +
+  labs(title = "Credit Utilization Ratio by Churn Status",
+       subtitle = "Churned customers have lower utilization — they're disengaged",
+       x = "Average Utilization Ratio", y = "Density", fill = NULL) +
+  theme_minimal(base_size = 15)
+
+credit_util_plot
+```
+
+
+### Churn Rate by Education Level
+
+Table of churn rate and count of customers churned by education level.
+
+```{r}
+churn_education = df %>%
+  group_by(Education_Level) %>%
+  summarise(churn_rate = mean(churned), n = n(), .groups = "drop") %>%
+  filter(Education_Level != "Unknown") %>%
+  mutate(Education_Level = fct_reorder(Education_Level, churn_rate))
+
+churn_education
+```
+
+
+Bar plot of churn rate by education level. It has been found that doctorate level customers are the greatest percent of the churned customers, while high school and undergraduate students are the lowest percent of the churned customers.
+
+```{r}
+churn_educ_plot = ggplot(churn_education, aes(x = Education_Level, y = churn_rate, fill = churn_rate)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = percent(churn_rate, 1)), hjust = -0.1, size = 4) +
+  scale_y_continuous(labels = percent, limits = c(0, 0.25)) +
+  scale_fill_gradient(low = "#90CAF9", high = "#F44336") +
+  coord_flip() +
+  labs(title = "Churn Rate by Education Level", 
+       x = NULL,
+       y = "Churn Rate") +
+  theme_minimal(base_size = 15)
+
+churn_educ_plot
+
+```
+
+
+### Months Inactive vs. Churn
+
+Bar plot of churn rate by months inactive. It is found that four months of being inactive has the greatest churn rate.
+
+```{r, warning=FALSE}
+activity = df %>%
+  count(Months_Inactive_12_mon, churned_label) %>%
+  group_by(Months_Inactive_12_mon) %>%
+  mutate(pct = n/sum(n)) %>%
+  filter(churned_label == "Churned")
+
+activity_plot = ggplot(activity, aes(x = (Months_Inactive_12_mon), y = pct, fill = pct)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = percent(pct, 1)), vjust = -0.4, size = 4) +
+  scale_y_continuous(labels = percent, limits = c(0, 0.5)) +
+  scale_fill_gradient(low = "#90CAF9", high = "#F44336") +
+  labs(title = "Churn Rate by Months Inactive",
+       x = "Months Inactive (last 12)", y = "Churn Rate") +
+  theme_minimal(base_size = 15)
+
+activity_plot
+```
+
+### Data Analysis Findings:
+
+Churn Rate:
+About 16% of customers in the dataset have churned. Therefore, with a higher churn rate a model evaluation is needed beyond simple analysis.
+
+Key Visual Findings:
+
+* Transaction Activity
+Churned customers made far fewer transactions on average (median of about 45) compared to retained customers (median of about 71). This was the single strongest behavioral signal in the data.
+
+* Credit Utilization
+Churned customers had significantly lower utilization ratios. This indicates disengagement from the card product rather than financial distress.
+
+* Education Level
+It was found that doctorate holders had the highest churn rate (~21%), while high school customers had among the lowest. This could be an indication that highly educated customers shop more actively for better financial products.
+
+* Inactivity
+Customers that are inactive for three months or longer churned at nearly double the rate of those with one month of inactivity. Inactivity is a leading indicator, not a lagging one.
+
+
+## Statistical Analysis
+
+### Point-Biserial Correlations (Continuous Variables vs. Churn)
+
+Created a point-biserial correlations table for continuous variables versus churn. All correlations found to be significant when using a p-value < 0.05. Highest correlations were found to be Total_Trans_Ct, Total_Ct_Chng_Q4_Q1, Total_Revolving_Bal, Contacts_Count_12_mon, and Avg_Utilization_Ratio.
+
+```{r}
+num_vars = df %>%
+  select(Customer_Age, Dependent_count, Months_on_book, Total_Relationship_Count,
+         Months_Inactive_12_mon, Contacts_Count_12_mon, Credit_Limit, Total_Revolving_Bal,
+         Avg_Open_To_Buy, Total_Amt_Chng_Q4_Q1, Total_Trans_Amt, Total_Trans_Ct,
+         Total_Ct_Chng_Q4_Q1, Avg_Utilization_Ratio, churned)
+
+corr_results = num_vars %>%
+  select(-churned) %>%
+  map_dfr(~ { test = cor.test(.x, num_vars$churned, method = "pearson")
+  tibble(correlation = test$estimate, p_value = test$p.value)},
+  .id = "variable") %>%
+  arrange(desc(abs(correlation)))
+
+corr_results
+```
+
+### Chi-Square Tests for Categorical Variables
+
+Chi-squared test were then ran for the categorical variables. Gender and Income_Category were found to be significant when using a p-value < 0.05.
+
+```{r, warning=FALSE}
+cat_vars = c("Gender", "Education_Level", "Marital_Status", "Income_Category", "Card_Category")
+
+for (v in cat_vars) {
+  tbl = table(df[[v]], df$churned_label)
+  chi = chisq.test(tbl)
+  cat(sprintf("%-20s chi^2 = %6.2f df = %d p = %.4f\n",
+              v, chi$statistic, chi$parameter, chi$p.value))
+}
+```
+
+
+## Logistic Regression Model
+
+### Model Data Setup
+
+Preparing data for logistic regression model.
+
+```{r}
+model_data = df %>%
+  select(churned, Customer_Age, Gender, Dependent_count, Education_Level,
+         Marital_Status, Income_Category, Card_Category, Months_on_book,
+         Total_Relationship_Count, Months_Inactive_12_mon, Contacts_Count_12_mon,
+         Total_Trans_Ct, Total_Trans_Amt, Total_Revolving_Bal, Avg_Utilization_Ratio,
+         Total_Ct_Chng_Q4_Q1, Total_Amt_Chng_Q4_Q1) %>%
+  mutate(churned = factor(churned, levels = c(0,1), 
+                          labels = c("Retained", "Churned")),
+         Gender = factor(Gender),
+         Education_Level = factor(Education_Level),
+         Marital_Status = factor(Marital_Status),
+         Income_Category = factor(Income_Category),
+         Card_Category = factor(Card_Category)) %>%
+  drop_na()
+
+```
+
+
+### Train and Test Split 75/25
+
+Set seed for reproducibility. Initiated a train/test split of 75/25 for the data. Checked number of rows for train and test data to ensure 75/25 split. 
+
+```{r}
+set.seed(365)
+
+train_idx = createDataPartition(model_data$churned, p = 0.75, list = FALSE)
+
+train_data = model_data[train_idx, ]
+
+test_data = model_data[-train_idx, ]
+
+nrow(train_data) 
+
+nrow(test_data)
+```
+
+
+### Fit Logistic Regression Model
+
+Fit the logistic regression model and acquired summary table for further analysis.
+
+```{r}
+logit_model = glm(churned ~ ., data = train_data, family = binomial(link = "logit"))
+
+summary(logit_model)
+```
+
+
+### Odds Ratio
+
+Acquired the odds ratio using the logistic regression model for easier interpretation.
+
+```{r}
+odds_ratio = exp(cbind(OR = coef(logit_model), confint(logit_model)))
+
+print(round(odds_ratio, 3))
+```
+
+
+### Predictions on Test Set
+
+Prepared data for confusion matrix by acquiring predictions on the test set.
+
+```{r}
+pred_prob = predict(logit_model, newdata = test_data, type = "response")
+
+pred_class = factor(if_else(pred_prob >= 0.5, "Churned", "Retained"),
+                    levels = c("Retained", "Churned"))
+```
+
+
+### Confusion Matrix and Accuracy Metrics
+
+Acquired confusion matrix and accuracy metrics using the test set from the logistic regression model.
+
+```{r}
+cm = confusionMatrix(pred_class, test_data$churned, positive = "Churned")
+
+cm
+```
+
+
+### ROC Curve and AUC
+
+ROC curve was created and AUC value was then found. The AUC value of 0.916 indicates a strong discriminative ability for the model. This means the model correctly ranks a randomly selected churner over a randomly selected retained customer 91.6% of the time.
+
+```{r}
+roc_on = roc(as.numeric(test_data$churned == "Churned"), pred_prob)
+
+auc_value = auc(roc_on)
+
+p_roc = ggroc(roc_on, colour = "#F44336", size = 1.2) +
+  geom_abline(slope = 1, intercept = 1, linetype = "dashed", color = "grey50") +
+  annotate("text", x = 0.35, y = 0.15,
+           label = paste0("AUC = ", round(auc_value, 3)),
+           size = 5, color = "#F44336", fontface = "bold") +
+  labs(title = "ROC Curve – Logistic Regression",
+       subtitle = "Higher AUC = better model discrimination",
+       x = "Specificity", y = "Sensitivity") +
+  theme_minimal(base_size = 13)
+
+p_roc
+```
+
+
+### Model Performance
+
+| Metric | Value |
+| :------ | ------:|
+| AUC | ~0.916 |
+| Accuracy | ~90% |
+| Recall (Sensitivity) | ~58.6% |
+| Precision | ~73.9% |
+
+
+### Feature Importance (Absolute Z-Values)
+
+The absolute z-values were then found while using p-value < 0.05. The top significant predictors (by |z-statistic|) were found to be:
+Total_Trans_Ct -- Most Powerful Predictor
+Total_Trans_Amt -- Lower Spend Trend
+Total_Relationship_Count -- Less Products Churn More
+Total_Ct_Chng_Q4_Q1 -- Declining Transaction Trend
+Contacts_Count_12_mon -- High Contact Volume Indicates Frustration
+
+```{r}
+coef_data = broom::tidy(logit_model) %>%
+  filter(term != "(Intercept)") %>%
+  mutate(abs_stat = abs(statistic),
+         significant = p.value < 0.05,
+         term = fct_reorder(term, abs_stat)) %>%
+  top_n(15, abs_stat)
+
+coef_plot = ggplot(coef_data, aes(x = term, y = abs_stat, fill = significant)) +
+  geom_col(show.legend = FALSE) +
+  scale_fill_manual(values = c("TRUE" = "#F44336", "FALSE" = "#90CAF9")) +
+  coord_flip() +
+  labs(title = "Top 15 Predictors of Churn",
+       subtitle = "Red = statistically significant (p < 0.05)",
+       x = NULL, y = "Absolute Z-statistic") +
+  theme_minimal(base_size = 13)
+
+coef_plot
+```
+
+
+## Business Recommendations
+
+Based on the analysis, the bank can reduce churn by targeting customers who exhibit early warning signs by the following ways:
+
+* Transaction-Based Warning System: Flag customers whose transaction count drops below fifty in a rolling twelve month window. Customers who meet this criteria are at a significant risk of churn and warrant outreach.
+
+* Inactivity Triggers: Automatically send personalized offers or check-in communications after two consecutive months of inactivity before the customer fully disengages.
+
+* Contact Center Review: Customers with four or more bank contacts in a twelve month span churn at high rates. This would suggest unresolved issues. Routing these customers to a senior retention specialist could recover a significant amount of churn-prone customers.
+
+* Incentives for Utilization: Customers with low utilization are disengaged. Credit limit promotions, cash-back promotions, balance transfer offers for customers with met qualifications can increase engagement and card usage.
+
+
+## Dataset
+
+Dataset provided by IBM / Kaggle under open license. Analysis conducted independently for portfolio purposes. Dataset can be found at the following link: 
+
+https://www.kaggle.com/datasets/sakshigoyal7/credit-card-customers
+
+
+
+
+
+
+
+
+
+

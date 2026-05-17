@@ -129,7 +129,7 @@ Based on the analysis, the bank can reduce churn by targeting customers who exhi
 1. Transaction-Based Warning System:
 Flag customers whose transaction count drops below fifty in a rolling twelve month window. Customers who meet this criteria are at a significant risk of churn and warrant outreach.
 2. Inactivity Triggers:
-
+test
 
 
 
